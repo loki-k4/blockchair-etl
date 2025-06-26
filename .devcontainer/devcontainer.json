@@ -1,0 +1,26 @@
+{
+  "name": "Bitcoin Data Pipeline",
+  "image": "mcr.microsoft.com/vscode/devcontainers/python:3.10",
+  "features": {
+    "ghcr.io/flexwie/devcontainer-features/op:1": {},
+    "ghcr.io/itsmechlark/features/snowflake-odbc:1": {}
+  },
+  "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "snowflake.snowflake-vsc"
+      ]
+    }
+  },
+  "remoteEnv": {
+    "SNOWFLAKE_USER": "${localEnv:SNOWFLAKE_USER}",
+    "SNOWFLAKE_PASSWORD": "${localEnv:SNOWFLAKE_PASSWORD}",
+    "SNOWFLAKE_ACCOUNT": "${localEnv:SNOWFLAKE_ACCOUNT}",
+    "SNOWFLAKE_WAREHOUSE": "${localEnv:SNOWFLAKE_WAREHOUSE}",
+    "SNOWFLAKE_DATABASE": "${localEnv:SNOWFLAKE_DATABASE}",
+    "SNOWFLAKE_SCHEMA": "${localEnv:SNOWFLAKE_SCHEMA}"
+  }
+}
