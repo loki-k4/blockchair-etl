@@ -14,6 +14,10 @@
         "github.copilot"
       ]
     },
+    "codespaces": {
+      "openFiles": []
+    }
+  },
   "hostRequirements": {
     "cpus": 4,
     "memory": "16GB"
