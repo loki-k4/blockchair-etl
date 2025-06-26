@@ -1,20 +1,24 @@
 {
-  "name": "Bitcoin Data Pipeline",
-  "image": "mcr.microsoft.com/vscode/devcontainers/python:3.10",
+  "name": "Bitcoin Data Pipeline (Python 3.11)",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
   "features": {
-    "ghcr.io/flexwie/devcontainer-features/op:1": {},
     "ghcr.io/itsmechlark/features/snowflake-odbc:1": {}
   },
-  "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt",
   "customizations": {
     "vscode": {
       "extensions": [
+        "ms-toolsai.jupyter",
         "ms-python.python",
-        "ms-python.vscode-pylance",
-        "snowflake.snowflake-vsc"
+        "ms-python.pylance",
+        "snowflake.snowflake-vsc",
+        "github.copilot"
       ]
-    }
+    },
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16GB"
   },
+  "postCreateCommand": "pip install --cache-dir=/tmp/.cache -r requirements.txt",
   "remoteEnv": {
     "SNOWFLAKE_USER": "${localEnv:SNOWFLAKE_USER}",
     "SNOWFLAKE_PASSWORD": "${localEnv:SNOWFLAKE_PASSWORD}",
