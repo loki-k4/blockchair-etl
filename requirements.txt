@@ -55,7 +55,7 @@ pathspec==0.12.1
 pillow==11.3.0
 platformdirs==4.3.8
 protobuf==5.29.5
-pyarrow==21.0.0
+pyarrow==18.0.0
 pycparser==2.22
 pydantic==2.11.7
 pydantic_core==2.33.2
