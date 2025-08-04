@@ -12,7 +12,7 @@ import pandas as pd
 from logging.handlers import RotatingFileHandler
 
 # === VERSION ===
-SCRIPT_VERSION = "1.0.4"
+SCRIPT_VERSION = "1.0.0"
 
 # === LOGGER SETUP ===
 def setup_logging(

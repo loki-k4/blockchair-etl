@@ -11,7 +11,7 @@ import requests
 from logging.handlers import RotatingFileHandler
 
 # === VERSION ===
-SCRIPT_VERSION = "1.0.6"
+SCRIPT_VERSION = "1.0.0
 
 # === LOGGER SETUP ===
 def setup_logging(log_dir: Path, log_level: str = "INFO", max_log_size: int = 10*1024*1024, backup_count: int = 5) -> None:
