@@ -1,5 +1,5 @@
 
-default_profile:
+crypto_profile:
   target: dev
   outputs:
     dev:
