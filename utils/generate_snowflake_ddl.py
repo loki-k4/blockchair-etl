@@ -17,7 +17,7 @@ except ImportError:
     COLORAMA_AVAILABLE = False
 
 # === VERSION ===
-SCRIPT_VERSION = "1.0.7"
+SCRIPT_VERSION = "1.0.5"
 
 # === LOGGER SETUP ===
 def setup_logging(
@@ -147,7 +147,7 @@ def parse_existing_schema(ddl_path: Optional[Path], json_path: Optional[Path], l
 
 # === FUNCTION: Compare schemas ===
 def compare_schemas(new_schema: List[Tuple[str, str]], old_schema: List[Tuple[str, str]], logger: logging.Logger) -> bool:
-    """Compare two schemas and determine if new_schema has larger or equal data types."""
+    """Compare two schemas and determine if new_schema has strictly larger data types."""
     if not old_schema:
         logger.info("No existing schema to compare, using new schema")
         return True
@@ -159,6 +159,9 @@ def compare_schemas(new_schema: List[Tuple[str, str]], old_schema: List[Tuple[st
     if not common_cols:
         logger.info("No common columns between schemas, using new schema")
         return True
+
+    has_larger_type = False
+    all_equal = True
 
     for col in common_cols:
         old_type = old_dict[col]
@@ -174,15 +177,21 @@ def compare_schemas(new_schema: List[Tuple[str, str]], old_schema: List[Tuple[st
             if new_len < old_len:
                 logger.info(f"Keeping old schema: VARCHAR length for {col} ({new_len}) is smaller than existing ({old_len})")
                 return False
+            elif new_len > old_len:
+                has_larger_type = True
+                all_equal = False
+            # If equal, continue checking other columns
         # Handle numeric types
         elif old_type == 'INTEGER' and new_type == 'FLOAT':
-            continue
+            has_larger_type = True
+            all_equal = False
         elif old_type == 'FLOAT' and new_type == 'INTEGER':
             logger.info(f"Keeping old schema: INTEGER for {col} is narrower than existing FLOAT")
             return False
         # Handle date/time types
         elif old_type == 'DATE' and new_type == 'TIMESTAMP':
-            continue
+            has_larger_type = True
+            all_equal = False
         elif old_type == 'TIMESTAMP' and new_type == 'DATE':
             logger.info(f"Keeping old schema: DATE for {col} is less precise than existing TIMESTAMP")
             return False
@@ -190,8 +199,15 @@ def compare_schemas(new_schema: List[Tuple[str, str]], old_schema: List[Tuple[st
         elif old_type != new_type:
             logger.info(f"Keeping old schema: Type mismatch for {col} (old={old_type}, new={new_type})")
             return False
+        # If types are equal, continue checking
+        else:
+            continue
 
-    logger.info("New schema has equal or larger types, will replace existing")
+    if all_equal and not has_larger_type:
+        logger.info("Keeping old schema: All column types are equal")
+        return False
+
+    logger.info("New schema has strictly larger types, will replace existing")
     return True
 
 # === FUNCTION: Infer schema ===
@@ -294,7 +310,7 @@ Examples:
     parser.add_argument("--output-ddl", help="Path to save DDL")
     parser.add_argument("--output-schema-json", help="Path to output inferred schema in JSON")
     parser.add_argument("--no-console-logs", action="store_true", help="Disable console logging")
-    parser.add_argument("--skip-existing", action="store_true", help="Compare and keep schema with larger types if output files exist")
+    parser.add_argument("--skip-existing", action="store_true", help="Compare and keep schema with larger or equal types if output files exist")
 
     args = parser.parse_args()
 
@@ -327,8 +343,8 @@ Examples:
         if args.skip_existing and (ddl_path or json_path):
             old_schema = parse_existing_schema(ddl_path, json_path, logger)
             if old_schema and not compare_schemas(new_schema, old_schema, logger):
-                print(f"{Fore.YELLOW if COLORAMA_AVAILABLE else ''}[WARNING] Keeping existing schema with larger types{Fore.RESET if COLORAMA_AVAILABLE else ''}")
-                logger.info("Skipped DDL generation due to larger existing schema")
+                print(f"{Fore.YELLOW if COLORAMA_AVAILABLE else ''}[WARNING] Keeping existing schema with larger or equal types{Fore.RESET if COLORAMA_AVAILABLE else ''}")
+                logger.info("Skipped DDL generation due to larger or equal existing schema")
                 sys.exit(1)  # Exit with code 1 to indicate skip
 
         ddl = generate_ddl(args.table_name, new_schema, logger)
@@ -360,6 +376,7 @@ Examples:
         sys.exit(5)  # Error
 if __name__ == "__main__":
     main()
-else:
-    print(f"{Fore.RED if COLORAMA_AVAILABLE else ''}[ERROR] This script is not meant to be imported as a module.{Fore.RESET if COLORAMA_AVAILABLE else ''}")
-    sys.exit(1) # Exit with error if imported
+else:           
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.warning("This script is intended to be run as a standalone program, not imported as a module.")  
