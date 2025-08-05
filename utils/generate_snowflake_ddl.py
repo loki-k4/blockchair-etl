@@ -17,7 +17,7 @@ except ImportError:
     COLORAMA_AVAILABLE = False
 
 # === VERSION ===
-SCRIPT_VERSION = "1.0.2"
+SCRIPT_VERSION = "1.0.4"
 
 # === LOGGER SETUP ===
 def setup_logging(
@@ -28,19 +28,7 @@ def setup_logging(
     no_console_logs: bool = False,
     logger_name: str = __name__
 ) -> logging.Logger:
-    """Configure and return a logger instance with rotating file handler.
-
-    Args:
-        log_dir: Directory for log files.
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR).
-        max_log_size: Maximum log file size in bytes (default: 10MB).
-        backup_count: Number of backup log files to keep.
-        no_console_logs: If True, disable console logging.
-        logger_name: Name of the logger instance.
-
-    Returns:
-        logging.Logger: Configured logger instance.
-    """
+    """Configure and return a logger instance with rotating file handler."""
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"ddl_generator_{datetime.now().strftime('%Y%m%d')}.log"
 
@@ -76,15 +64,7 @@ class DDLConfig:
     }
 
     def __init__(self, config_path: Path, logger: logging.Logger):
-        """Load and validate configuration from a JSON file.
-
-        Args:
-            config_path: Path to the configuration file.
-            logger: Logger instance for error reporting.
-
-        Raises:
-            ValueError: If configuration is invalid or missing required keys.
-        """
+        """Load and validate configuration from a JSON file."""
         self.logger = logger
         try:
             with open(config_path, 'r') as f:
@@ -102,23 +82,14 @@ class DDLConfig:
             self.date_formats = config.get("date_formats", [])
             self.timestamp_formats = config.get("timestamp_formats", [])
             self.usecols = config.get("usecols", [])
-            self.logger.info(f"Loaded configuration from {config_path}")
+            self.logger.info(f"Loaded configuration from {config_path}: default_string_length={self.default_string_length}, varchar_tiers={self.varchar_tiers}, date_formats={self.date_formats}, timestamp_formats={self.timestamp_formats}, usecols={self.usecols}")
         except Exception as e:
             self.logger.error(f"Failed to load configuration from {config_path}: {e}")
             raise
 
 # === FUNCTION: Get next VARCHAR tier ===
 def get_varchar_length(max_length: Optional[int], tiers: List[int], default: int) -> int:
-    """Determine the appropriate VARCHAR length based on tiers.
-
-    Args:
-        max_length: Maximum string length observed, or None if unknown.
-        tiers: List of VARCHAR length tiers.
-        default: Default VARCHAR length.
-
-    Returns:
-        int: Selected VARCHAR length.
-    """
+    """Determine the appropriate VARCHAR length based on tiers."""
     if max_length is None:
         return default
     for tier in tiers:
@@ -128,15 +99,7 @@ def get_varchar_length(max_length: Optional[int], tiers: List[int], default: int
 
 # === FUNCTION: Detect date/time ===
 def is_date_or_timestamp(series: pd.Series, formats: List[str]) -> Optional[str]:
-    """Check if a series matches date or timestamp formats.
-
-    Args:
-        series: Pandas Series to check.
-        formats: List of datetime formats to try.
-
-    Returns:
-        Optional[str]: 'DATE' or 'TIMESTAMP' if matched, else None.
-    """
+    """Check if a series matches date or timestamp formats."""
     try:
         sample = series.dropna().astype(str).head(100)
         if sample.empty:
@@ -153,26 +116,14 @@ def is_date_or_timestamp(series: pd.Series, formats: List[str]) -> Optional[str]
 
 # === FUNCTION: Parse existing schema ===
 def parse_existing_schema(ddl_path: Optional[Path], json_path: Optional[Path], logger: logging.Logger) -> List[Tuple[str, str]]:
-    """Parse schema from existing DDL or JSON file.
-
-    Args:
-        ddl_path: Path to existing DDL file, or None.
-        json_path: Path to existing JSON schema file, or None.
-        logger: Logger instance.
-
-    Returns:
-        List[Tuple[str, str]]: List of (column_name, column_type) tuples.
-
-    Raises:
-        ValueError: If parsing fails or files are invalid.
-    """
+    """Parse schema from existing DDL or JSON file."""
     schema = []
     if json_path and json_path.exists():
         try:
             with json_path.open('r') as f:
                 schema_data = json.load(f)
             schema = [(col['name'], col['type']) for col in schema_data]
-            logger.info(f"Parsed schema from JSON: {json_path}")
+            logger.info(f"Parsed schema from JSON: {json_path} with {len(schema)} columns")
             return schema
         except Exception as e:
             logger.error(f"Failed to parse schema from JSON {json_path}: {e}")
@@ -181,27 +132,22 @@ def parse_existing_schema(ddl_path: Optional[Path], json_path: Optional[Path], l
         try:
             with ddl_path.open('r') as f:
                 ddl = f.read()
-            columns = re.findall(r'(\w+)\s+(\w+(?:\s*\(\s*\d+\s*\))?)\s*(?:,|$)', ddl, re.MULTILINE | re.IGNORECASE)
-            schema = [(name, typ.strip()) for name, typ in columns]
-            logger.info(f"Parsed schema from DDL: {ddl_path}")
+            # Remove comments and normalize whitespace
+            ddl = re.sub(r'--.*?\n|/\*.*?\*/', '', ddl, flags=re.DOTALL)
+            # Match column definitions, handling potential whitespace and commas
+            columns = re.findall(r'(\w+)\s+(\w+(?:\s*\(\s*\d+\s*\))?)\s*(?:,|\))', ddl, re.MULTILINE | re.IGNORECASE)
+            schema = [(name.upper(), typ.strip().upper()) for name, typ in columns]
+            logger.info(f"Parsed schema from DDL: {ddl_path} with {len(schema)} columns")
             return schema
         except Exception as e:
             logger.error(f"Failed to parse schema from DDL {ddl_path}: {e}")
             raise ValueError(f"Invalid DDL file: {e}")
+    logger.debug(f"No existing schema found for DDL: {ddl_path}, JSON: {json_path}")
     return schema
 
 # === FUNCTION: Compare schemas ===
 def compare_schemas(new_schema: List[Tuple[str, str]], old_schema: List[Tuple[str, str]], logger: logging.Logger) -> bool:
-    """Compare two schemas and determine if new_schema has larger or equal data types.
-
-    Args:
-        new_schema: Newly inferred schema (column_name, column_type).
-        old_schema: Existing schema from DDL or JSON.
-        logger: Logger instance.
-
-    Returns:
-        bool: True if new_schema should replace old_schema (larger or equal types), False otherwise.
-    """
+    """Compare two schemas and determine if new_schema has larger or equal data types."""
     if not old_schema:
         logger.info("No existing schema to compare, using new schema")
         return True
@@ -221,8 +167,10 @@ def compare_schemas(new_schema: List[Tuple[str, str]], old_schema: List[Tuple[st
 
         # Handle VARCHAR
         if 'VARCHAR' in old_type and 'VARCHAR' in new_type:
-            old_len = int(re.search(r'\d+', old_type).group())
-            new_len = int(re.search(r'\d+', new_type).group())
+            old_len_match = re.search(r'\((\d+)\)', old_type)
+            new_len_match = re.search(r'\((\d+)\)', new_type)
+            old_len = int(old_len_match.group(1)) if old_len_match else 16777216
+            new_len = int(new_len_match.group(1)) if new_len_match else 16777216
             if new_len < old_len:
                 logger.info(f"Keeping old schema: VARCHAR length for {col} ({new_len}) is smaller than existing ({old_len})")
                 return False
@@ -248,21 +196,7 @@ def compare_schemas(new_schema: List[Tuple[str, str]], old_schema: List[Tuple[st
 
 # === FUNCTION: Infer schema ===
 def infer_schema(file_path: Path, sample_rows: int, chunk_size: int, config: DDLConfig, logger: logging.Logger) -> List[Tuple[str, str]]:
-    """Infer Snowflake schema from a TSV or TSV.GZ file.
-
-    Args:
-        file_path: Path to input file.
-        sample_rows: Number of rows to sample.
-        chunk_size: Number of rows per chunk for processing.
-        config: DDL configuration.
-        logger: Logger instance.
-
-    Returns:
-        List[Tuple[str, str]]: List of (column_name, column_type) tuples.
-
-    Raises:
-        ValueError: If schema inference fails.
-    """
+    """Infer Snowflake schema from a TSV or TSV.GZ file."""
     logger.info(f"Inferring schema from {file_path} using {sample_rows} sample rows, chunk_size={chunk_size}")
     try:
         schema = []
@@ -323,19 +257,7 @@ def infer_schema(file_path: Path, sample_rows: int, chunk_size: int, config: DDL
 
 # === FUNCTION: Generate DDL ===
 def generate_ddl(table_name: str, schema: List[Tuple[str, str]], logger: logging.Logger) -> str:
-    """Generate Snowflake DDL for a table.
-
-    Args:
-        table_name: Name of the table.
-        schema: List of (column_name, column_type) tuples.
-        logger: Logger instance.
-
-    Returns:
-        str: Generated DDL statement.
-
-    Raises:
-        ValueError: If table name is invalid or schema is empty.
-    """
+    """Generate Snowflake DDL for a table."""
     if not re.match(r"^[a-zA-Z][a-zA-Z0-9_]*$", table_name):
         logger.error(f"Invalid table name: {table_name}")
         raise ValueError(f"Invalid table name: {table_name}")
@@ -358,8 +280,8 @@ def main():
         description=f"Generate Snowflake DDL from TSV or TSV.GZ files (Version: {SCRIPT_VERSION})",
         epilog="""
 Examples:
-  python generate_snowflake_ddl.py data.tsv my_table
-  python generate_snowflake_ddl.py file.tsv.gz my_table --output-ddl sql/table_inputs.sql --skip-existing
+  python generate_snowflake_ddl.py data.tsv blocks_raw --output-ddl sql/ddl/create_blocks.sql --skip-existing
+  python generate_snowflake_ddl.py file.tsv.gz inputs_raw --output-ddl sql/ddl/create_inputs.sql
 """
     )
     parser.add_argument("file_path", help="Path to input TSV or TSV.GZ file")
@@ -407,7 +329,7 @@ Examples:
             if old_schema and not compare_schemas(new_schema, old_schema, logger):
                 print(f"{Fore.YELLOW if COLORAMA_AVAILABLE else ''}[WARNING] Keeping existing schema with larger types{Fore.RESET if COLORAMA_AVAILABLE else ''}")
                 logger.info("Skipped DDL generation due to larger existing schema")
-                sys.exit(0)
+                return
 
         ddl = generate_ddl(args.table_name, new_schema, logger)
 

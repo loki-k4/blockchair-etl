@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Version: 1.0.2
-# Purpose: Run download_blockchair_data.py in venv daily at 12:30 AM for Bitcoin data, generate DDL to sql/table_<table>.sql, skip existing files, and retain last 2 days of data
+# Version: 1.0.4
+# Purpose: Run download_blockchair_data.py in venv daily at 12:30 AM for Bitcoin data, generate DDL to sql/ddl/create_<table>.sql, skip existing DDLs with larger types, and retain last 2 days of data
 # Usage: Called by cron, no manual execution required
 # Example cron entry: 30 0 * * * /bin/bash /root/blockchair-etl/scripts/daily_download_blockchair.sh
 
-SCRIPT_VERSION="1.0.2"
+SCRIPT_VERSION="1.0.4"
 PROJECT_ROOT="$(realpath "$(dirname "$0")/..")"
 LOG_DIR="${PROJECT_ROOT}/logs/downloader"
 LOG_FILE="${LOG_DIR}/downloader_$(date +%Y%m%d).log"
@@ -66,7 +66,7 @@ for table in "${TABLES[@]}"; do
         python3 "${PROJECT_ROOT}/utils/generate_snowflake_ddl.py" \
             "$file" \
             "${table}_raw" \
-            --sample-rows 1000000 \
+            --sample-rows 100000 \
             --chunk-size 10000 \
             --config "${PROJECT_ROOT}/utils/config/ddl_config.json" \
             --log-dir "${PROJECT_ROOT}/logs/ddl_generator" \
@@ -75,7 +75,16 @@ for table in "${TABLES[@]}"; do
             --no-console-logs \
             --skip-existing
         if [[ $? -eq 0 ]]; then
-            log_message "INFO" "Generated or kept existing DDL for ${table}_raw at $ddl_file"
+            if [[ -f "$ddl_file" ]]; then
+                # Check log for skip confirmation
+                if grep -q "Skipped DDL generation due to larger existing schema" "${PROJECT_ROOT}/logs/ddl_generator/ddl_generator_$(date +%Y%m%d).log"; then
+                    log_message "INFO" "Kept existing DDL for ${table}_raw at $ddl_file due to larger schema"
+                else
+                    log_message "INFO" "Generated new DDL for ${table}_raw at $ddl_file"
+                fi
+            else
+                log_message "INFO" "Generated new DDL for ${table}_raw at $ddl_file"
+            fi
         else
             log_message "WARNING" "Failed to generate DDL for $file"
         fi
