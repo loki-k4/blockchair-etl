@@ -17,7 +17,7 @@ except ImportError:
     COLORAMA_AVAILABLE = False
 
 # === VERSION ===
-SCRIPT_VERSION = "1.0.3"
+SCRIPT_VERSION = "1.0.2"
 
 # === LOGGER SETUP ===
 def setup_logging(
