@@ -8,7 +8,7 @@ from logging.handlers import RotatingFileHandler
 import socket
 
 # === VERSION ===
-SCRIPT_VERSION = "1.0.2"
+SCRIPT_VERSION = "1.0.5"
 
 # === LOGGER SETUP ===
 def setup_logging(log_dir: Path, log_level: str = "INFO", max_log_size: int = 10*1024*1024, backup_count: int = 5, no_console_log: bool = False) -> None:
