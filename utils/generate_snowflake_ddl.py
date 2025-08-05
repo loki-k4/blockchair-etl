@@ -17,7 +17,7 @@ except ImportError:
     COLORAMA_AVAILABLE = False
 
 # === VERSION ===
-SCRIPT_VERSION = "1.0.4"
+SCRIPT_VERSION = "1.0.7"
 
 # === LOGGER SETUP ===
 def setup_logging(
@@ -122,7 +122,7 @@ def parse_existing_schema(ddl_path: Optional[Path], json_path: Optional[Path], l
         try:
             with json_path.open('r') as f:
                 schema_data = json.load(f)
-            schema = [(col['name'], col['type']) for col in schema_data]
+            schema = [(col['name'].upper(), col['type'].upper()) for col in schema_data]
             logger.info(f"Parsed schema from JSON: {json_path} with {len(schema)} columns")
             return schema
         except Exception as e:
@@ -134,7 +134,7 @@ def parse_existing_schema(ddl_path: Optional[Path], json_path: Optional[Path], l
                 ddl = f.read()
             # Remove comments and normalize whitespace
             ddl = re.sub(r'--.*?\n|/\*.*?\*/', '', ddl, flags=re.DOTALL)
-            # Match column definitions, handling potential whitespace and commas
+            # Match column definitions, handling whitespace, commas, and optional lengths
             columns = re.findall(r'(\w+)\s+(\w+(?:\s*\(\s*\d+\s*\))?)\s*(?:,|\))', ddl, re.MULTILINE | re.IGNORECASE)
             schema = [(name.upper(), typ.strip().upper()) for name, typ in columns]
             logger.info(f"Parsed schema from DDL: {ddl_path} with {len(schema)} columns")
@@ -265,7 +265,7 @@ def generate_ddl(table_name: str, schema: List[Tuple[str, str]], logger: logging
         logger.error("Empty schema - cannot generate DDL")
         raise ValueError("Schema is empty")
 
-    columns = [f"{col} {col_type}" for col, col_type in schema]
+    columns = [f"{col} {typ}" for col, typ in schema]
     ddl = f"CREATE OR REPLACE TABLE {table_name} (\n    " + ",\n    ".join(columns) + "\n);"
     logger.info(f"Generated DDL for table `{table_name}` with {len(schema)} columns")
     return ddl
@@ -329,7 +329,7 @@ Examples:
             if old_schema and not compare_schemas(new_schema, old_schema, logger):
                 print(f"{Fore.YELLOW if COLORAMA_AVAILABLE else ''}[WARNING] Keeping existing schema with larger types{Fore.RESET if COLORAMA_AVAILABLE else ''}")
                 logger.info("Skipped DDL generation due to larger existing schema")
-                return
+                sys.exit(1)  # Exit with code 1 to indicate skip
 
         ddl = generate_ddl(args.table_name, new_schema, logger)
 
@@ -353,10 +353,13 @@ Examples:
 
         logger.info("DDL generation completed successfully")
         print(f"{Fore.GREEN if COLORAMA_AVAILABLE else ''}✅ DDL generation completed{Fore.RESET if COLORAMA_AVAILABLE else ''}")
+        sys.exit(0)  # Success
     except Exception as e:
         logger.exception(f"DDL generation failed: {e}")
         print(f"{Fore.RED if COLORAMA_AVAILABLE else ''}[ERROR] DDL generation failed: {e}{Fore.RESET if COLORAMA_AVAILABLE else ''}")
-        sys.exit(5)
-
+        sys.exit(5)  # Error
 if __name__ == "__main__":
     main()
+else:
+    print(f"{Fore.RED if COLORAMA_AVAILABLE else ''}[ERROR] This script is not meant to be imported as a module.{Fore.RESET if COLORAMA_AVAILABLE else ''}")
+    sys.exit(1) # Exit with error if imported
