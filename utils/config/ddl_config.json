@@ -1,4 +1,7 @@
 {
     "default_string_length": 64,
-    "varchar_tiers": [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8388608, 16777216]
+    "varchar_tiers": [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8388608, 16777216],
+    "date_formats": ["%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y"],
+    "timestamp_formats": ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"],
+    "usecols": []
 }
