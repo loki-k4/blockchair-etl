@@ -1,16 +1,15 @@
 #!/bin/bash
 
-# Version: 1.0.4
+# Version: 1.0.7
 # Purpose: Run download_blockchair_data.py in venv daily at 12:30 AM for Bitcoin data, generate DDL to sql/ddl/create_<table>.sql, skip existing DDLs with larger types, and retain last 2 days of data
 # Usage: Called by cron, no manual execution required
 # Example cron entry: 30 0 * * * /bin/bash /root/blockchair-etl/scripts/daily_download_blockchair.sh
 
-SCRIPT_VERSION="1.0.4"
+SCRIPT_VERSION="1.0.7"
 PROJECT_ROOT="$(realpath "$(dirname "$0")/..")"
 LOG_DIR="${PROJECT_ROOT}/logs/downloader"
 LOG_FILE="${LOG_DIR}/downloader_$(date +%Y%m%d).log"
 DATA_DIR="${PROJECT_ROOT}/crypto-data/bitcoin"
-SQL_DIR="${PROJECT_ROOT}/sql"
 SQL_DIR_DDL="${PROJECT_ROOT}/sql/ddl"
 VENV_ACTIVATE="${PROJECT_ROOT}/.venv/bin/activate"
 HOSTNAME=$(hostname)
@@ -23,10 +22,10 @@ log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] [Host: $HOSTNAME] [Version: $SCRIPT_VERSION] [daily_download_blockchair] $message" >> "$LOG_FILE"
 }
 
-# Setup logging and SQL directories
-mkdir -p "$LOG_DIR" "$SQL_DIR" "$SQL_DIR_DDL"
+# Setup logging and SQL DDL directories
+mkdir -p "$LOG_DIR" "$SQL_DIR_DDL"
 if [[ $? -ne 0 ]]; then
-    log_message "ERROR" "Failed to create directories: $LOG_DIR or $SQL_DIR or $SQL_DIR_DDL"
+    log_message "ERROR" "Failed to create directories: $LOG_DIR or $SQL_DIR_DDL"
     exit 1
 fi
 
@@ -74,19 +73,13 @@ for table in "${TABLES[@]}"; do
             --output-ddl "$ddl_file" \
             --no-console-logs \
             --skip-existing
-        if [[ $? -eq 0 ]]; then
-            if [[ -f "$ddl_file" ]]; then
-                # Check log for skip confirmation
-                if grep -q "Skipped DDL generation due to larger existing schema" "${PROJECT_ROOT}/logs/ddl_generator/ddl_generator_$(date +%Y%m%d).log"; then
-                    log_message "INFO" "Kept existing DDL for ${table}_raw at $ddl_file due to larger schema"
-                else
-                    log_message "INFO" "Generated new DDL for ${table}_raw at $ddl_file"
-                fi
-            else
-                log_message "INFO" "Generated new DDL for ${table}_raw at $ddl_file"
-            fi
+        exit_code=$?
+        if [[ $exit_code -eq 0 ]]; then
+            log_message "INFO" "Generated new DDL for ${table}_raw at $ddl_file"
+        elif [[ $exit_code -eq 1 ]]; then
+            log_message "INFO" "Kept existing DDL for ${table}_raw at $ddl_file due to larger schema"
         else
-            log_message "WARNING" "Failed to generate DDL for $file"
+            log_message "WARNING" "Failed to generate DDL for $file (exit code: $exit_code)"
         fi
     else
         log_message "WARNING" "File not found: $file, skipping DDL generation"
