@@ -5,12 +5,13 @@
 # Usage: Called by cron, no manual execution required
 # Example cron entry: 30 0 * * * /bin/bash /root/blockchair-etl/scripts/daily_download_blockchair.sh
 
-SCRIPT_VERSION="1.0.4"
+SCRIPT_VERSION="1.0.2"
 PROJECT_ROOT="$(realpath "$(dirname "$0")/..")"
 LOG_DIR="${PROJECT_ROOT}/logs/downloader"
 LOG_FILE="${LOG_DIR}/downloader_$(date +%Y%m%d).log"
 DATA_DIR="${PROJECT_ROOT}/crypto-data/bitcoin"
 SQL_DIR="${PROJECT_ROOT}/sql"
+SQL_DIR_DDL="${PROJECT_ROOT}/sql/ddl"
 VENV_ACTIVATE="${PROJECT_ROOT}/.venv/bin/activate"
 HOSTNAME=$(hostname)
 YESTERDAY=$(date -d "yesterday" +%Y%m%d)
@@ -23,9 +24,9 @@ log_message() {
 }
 
 # Setup logging and SQL directories
-mkdir -p "$LOG_DIR" "$SQL_DIR"
+mkdir -p "$LOG_DIR" "$SQL_DIR" "$SQL_DIR_DDL"
 if [[ $? -ne 0 ]]; then
-    log_message "ERROR" "Failed to create directories: $LOG_DIR or $SQL_DIR"
+    log_message "ERROR" "Failed to create directories: $LOG_DIR or $SQL_DIR or $SQL_DIR_DDL"
     exit 1
 fi
 
@@ -59,7 +60,7 @@ fi
 TABLES=("blocks" "transactions" "outputs" "inputs")
 for table in "${TABLES[@]}"; do
     file="${DATA_DIR}/blockchair_bitcoin_${table}_${YESTERDAY}.tsv.gz"
-    ddl_file="${SQL_DIR}/table_${table}.sql"
+    ddl_file="${SQL_DIR_DDL}/create_${table}.sql"
     if [[ -f "$file" ]]; then
         log_message "INFO" "Generating DDL for $file"
         python3 "${PROJECT_ROOT}/utils/generate_snowflake_ddl.py" \
