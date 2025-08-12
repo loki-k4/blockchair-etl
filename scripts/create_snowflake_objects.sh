@@ -1,27 +1,12 @@
 #!/bin/bash
 
 # Version info
-VERSION="1.0.0"
+VERSION="1.0.3"
 SCRIPT_NAME=$(basename "$0")
 
-# Load environment variables from .env file
-if [ -f ".env" ]; then
-    source .env
-else
-    echo "Warning: .env file not found"
-fi
-
-# Snowflake connection parameters from environment variables (for validation or fallback)
-SNOWFLAKE_ACCOUNT="${SNOWFLAKE_ACCOUNT}"
-SNOWFLAKE_USER="${SNOWFLAKE_USER}"
-SNOWFLAKE_PASSWORD="${SNOWFLAKE_PASSWORD}"
-SNOWFLAKE_ROLE="${SNOWFLAKE_ROLE:-ACCOUNTADMIN}"
-SNOWFLAKE_WAREHOUSE="${SNOWFLAKE_WAREHOUSE}"
-
-# Validate environment variables (optional, as they may be in the config)
-if [ -z "$SNOWFLAKE_ACCOUNT" ] || [ -z "$SNOWFLAKE_USER" ] || [ -z "$SNOWFLAKE_PASSWORD" ]; then
-    echo "Warning: Environment variables (SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD) not set. Relying on SnowSQL config 'blockchair_bitcoin'."
-fi
+# Default SnowSQL connection name and config path
+SNOWSQL_CONNECTION="${SNOWSQL_CONNECTION:-blockchair}"
+SNOWSQL_CONFIG="${SNOWSQL_CONFIG:-.snowsql/config}"
 
 # Logging setup with daily rotation
 LOG_DIR="logs/snowflake"
@@ -33,7 +18,7 @@ log_message() {
     local message=$2
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local hostname=$(hostname)
-    echo "$timestamp - $SCRIPT_NAME - $level - Script: $SCRIPT_NAME - Version: $VERSION - Host: $hostname - $message" | tee -a "$LOG_FILE"
+    echo "$timestamp - $SCRIPT_NAME - $level - Version: $VERSION - Host: $hostname - Connection: $SNOWSQL_CONNECTION - $message" | tee -a "$LOG_FILE"
 }
 
 # Rotate logs (keep last 7 days)
@@ -46,7 +31,6 @@ execute_snowsql() {
     local temp_sql_file
     local output
     temp_sql_file=$(mktemp /tmp/snowsql.XXXXXX.sql)
-    # Add USE WAREHOUSE command if warehouse is specified and action is not create-warehouse
     if [ -n "$WAREHOUSE" ] && [ "$ACTION" != "warehouse" ]; then
         echo "USE WAREHOUSE $WAREHOUSE;" > "$temp_sql_file"
         echo "$sql_command" >> "$temp_sql_file"
@@ -54,8 +38,8 @@ execute_snowsql() {
         echo "$sql_command" > "$temp_sql_file"
     fi
     log_message "DEBUG" "Executing SQL from file: $temp_sql_file"
-    log_message "DEBUG" "SQL content: $(cat $temp_sql_file)"
-    output=$(snowsql -c blockchair_bitcoin -o quiet=true -f "$temp_sql_file" 2>&1)
+    log_message "DEBUG" "SQL content: $(cat "$temp_sql_file")"
+    output=$(snowsql -c "$SNOWSQL_CONNECTION" --config "$SNOWSQL_CONFIG" -o quiet=true -f "$temp_sql_file" 2>&1)
     local status=$?
     rm -f "$temp_sql_file"
     if [ $status -eq 0 ]; then
@@ -66,12 +50,43 @@ execute_snowsql() {
     fi
 }
 
+# Function to check if database exists
+check_database_exists() {
+    local db_name="$1"
+    local sql="SELECT CATALOG_NAME FROM INFORMATION_SCHEMA.DATABASES WHERE CATALOG_NAME = UPPER('$db_name');"
+    local temp_sql_file=$(mktemp /tmp/snowsql.XXXXXX.sql)
+    echo "$sql" > "$temp_sql_file"
+    output=$(snowsql -c "$SNOWSQL_CONNECTION" --config "$SNOWSQL_CONFIG" -o quiet=true -f "$temp_sql_file" 2>&1)
+    local status=$?
+    rm -f "$temp_sql_file"
+    if [ $status -ne 0 ] || [ -z "$output" ]; then
+        log_message "ERROR" "Database $db_name does not exist or is not accessible."
+        exit 1
+    fi
+}
+
+# Function to check if schema exists
+check_schema_exists() {
+    local db_name="$1"
+    local schema_name="$2"
+    local sql="SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE CATALOG_NAME = UPPER('$db_name') AND SCHEMA_NAME = UPPER('$schema_name');"
+    local temp_sql_file=$(mktemp /tmp/snowsql.XXXXXX.sql)
+    echo "USE WAREHOUSE $WAREHOUSE;" > "$temp_sql_file"
+    echo "$sql" >> "$temp_sql_file"
+    output=$(snowsql -c "$SNOWSQL_CONNECTION" --config "$SNOWSQL_CONFIG" -o quiet=true -f "$temp_sql_file" 2>&1)
+    local status=$?
+    rm -f "$temp_sql_file"
+    if [ $status -ne 0 ] || [ -z "$output" ]; then
+        log_message "ERROR" "Schema $db_name.$schema_name does not exist or is not accessible. Create it first using --create-schema."
+        exit 1
+    fi
+}
+
 # Function to extract table name from SQL file
 extract_table_name() {
     local sql_file="$1"
     local sql_content
     sql_content=$(cat "$sql_file")
-    # Extract table name from CREATE TABLE statement (case-insensitive, handles OR REPLACE)
     table_name=$(echo "$sql_content" | grep -i "CREATE[[:space:]]\+.*TABLE" | sed -E 's/.*CREATE[[:space:]]+(OR REPLACE[[:space:]]+)?TABLE[[:space:]]+([a-zA-Z0-9_]+).*/\2/i' | head -1)
     echo "$table_name"
 }
@@ -80,14 +95,16 @@ extract_table_name() {
 show_help() {
     echo "Usage: $SCRIPT_NAME [options]"
     echo
-    echo "This script creates Snowflake objects using SnowSQL with the 'blockchair_bitcoin' connection."
+    echo "This script creates Snowflake objects using SnowSQL with connection specified by -c blockchair and --config .snowsql/config."
     echo "Specify one of the following actions via arguments. Required and optional arguments for each action are listed below."
     echo "Most actions require a warehouse to be specified with --warehouse unless creating a warehouse."
     echo
     echo "Options:"
     echo "  -h, --help                Show this help message and exit"
     echo "  --version                 Show script version and exit"
-    echo "  --warehouse NAME          Warehouse to use for operations (required for all actions except create-warehouse) [default: SNOWFLAKE_WAREHOUSE from .env]"
+    echo "  --connection NAME         SnowSQL connection name [default: blockchair]"
+    echo "  --config PATH             Path to SnowSQL config file [default: .snowsql/config]"
+    echo "  --warehouse NAME          Warehouse to use for operations (required for all actions except create-warehouse)"
     echo
     echo "Create Warehouse:"
     echo "   Required arguments:"
@@ -110,7 +127,7 @@ show_help() {
     echo "Create Schema:"
     echo "   Required arguments:"
     echo "     --create-schema NAME             Schema name"
-    echo "     --database-name NAME      Database name for the schema"
+    echo "     --database-name NAME             Database name for the schema"
     echo "     --warehouse NAME                 Warehouse to use for the operation"
     echo "   Optional arguments:"
     echo "     --schema-or-replace              Replace existing schema if it exists"
@@ -121,7 +138,7 @@ show_help() {
     echo "Create File Format:"
     echo "   Required arguments:"
     echo "     --create-file-format NAME        File format name"
-    echo "     --database-name NAME      Database name for the file format"
+    echo "     --database-name NAME             Database name for the file format"
     echo "     --schema-name NAME               Schema name for the file format (must exist)"
     echo "     --warehouse NAME                 Warehouse to use for the operation"
     echo "   Optional arguments:"
@@ -134,7 +151,7 @@ show_help() {
     echo "Create Stage:"
     echo "   Required arguments:"
     echo "     --create-stage NAME              Stage name"
-    echo "     --database-name NAME      Database name for the stage"
+    echo "     --database-name NAME             Database name for the stage"
     echo "     --schema-name NAME               Schema name for the stage (must exist)"
     echo "     --warehouse NAME                 Warehouse to use for the operation"
     echo "   Optional arguments:"
@@ -144,7 +161,7 @@ show_help() {
     echo "Create Table (using SQL file):"
     echo "   Required arguments:"
     echo "     --create-table                   Flag to create a table (table name is extracted from the SQL file)"
-    echo "     --database-name NAME      Database name for the table"
+    echo "     --database-name NAME             Database name for the table"
     echo "     --schema-name NAME               Schema name for the table (must exist)"
     echo "     --table-sql-path PATH            Path to .sql file containing CREATE TABLE statement"
     echo "     --warehouse NAME                 Warehouse to use for the operation"
@@ -163,12 +180,17 @@ show_help() {
     echo "    $SCRIPT_NAME --create-table --database-name BITCOIN_DB --schema-name BITCOIN_SCHEMA --table-sql-path create_table.sql --table-file-path data.tsv --warehouse MY_WAREHOUSE"
     echo "  Override table name from SQL file:"
     echo "    $SCRIPT_NAME --create-table --table-name CUSTOM_TABLE --database-name BITCOIN_DB --schema-name BITCOIN_SCHEMA --table-sql-path create_table.sql --warehouse MY_WAREHOUSE"
+    echo "  Use a different connection name:"
+    echo "    $SCRIPT_NAME --connection custom_connection --create-warehouse MY_WAREHOUSE"
     exit 0
 }
 
-# Check for help flag
+# Check for help or version flags
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     show_help
+elif [[ "$1" == "--version" ]]; then
+    echo "$SCRIPT_NAME $VERSION"
+    exit 0
 fi
 
 # Parse command-line arguments
@@ -177,24 +199,24 @@ WAREHOUSE_TYPE="STANDARD"
 WAREHOUSE_SIZE="XSMALL"
 WAREHOUSE_COMMENT="Warehouse for Bitcoin data processing"
 WAREHOUSE=""
-DATABASE_NAME=""
+CREATE_DATABASE=""
 DATABASE_OR_REPLACE=""
 DATABASE_TRANSIENT=""
 DATABASE_COMMENT="Database for Crypto"
 DATABASE_TAGS=""
-SCHEMA_NAME=""
+CREATE_SCHEMA=""
 DATABASE_NAME=""
 SCHEMA_OR_REPLACE=""
 SCHEMA_TRANSIENT=""
 SCHEMA_COMMENT="Schema for Bitcoin data processing"
 SCHEMA_TAGS=""
-FILE_FORMAT_NAME=""
+CREATE_FILE_FORMAT=""
 FILE_FORMAT_TYPE="CSV"
 FILE_FORMAT_FIELD_DELIMITER="\t"
-FILE_FORMAT_FIELD_OPTIONALLY_ENclosed_BY="NONE"
+FILE_FORMAT_FIELD_OPTIONALLY_ENCLOSED_BY="NONE"
 FILE_FORMAT_SKIP_HEADER=1
 FILE_FORMAT_COMMENT="File format for TSV files used in blockchain ETL processes"
-STAGE_NAME=""
+CREATE_STAGE=""
 STAGE_FILE_FORMAT="tsv_file"
 STAGE_COMMENT="Stage for TSV files used in blockchain ETL processes"
 CREATE_TABLE=""
@@ -204,31 +226,62 @@ TABLE_FILE_PATH=""
 TABLE_FILE_FORMAT="tsv_file"
 TABLE_COMMENT="Table for blockchain data"
 
+# Valid values for validation
+VALID_WAREHOUSE_TYPES=("STANDARD" "SNOWPARK-OPTIMIZED")
+VALID_WAREHOUSE_SIZES=("XSMALL" "SMALL" "MEDIUM" "LARGE" "XLARGE" "XXLARGE")
+VALID_FILE_FORMAT_TYPES=("CSV" "JSON" "PARQUET")
+
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --create-warehouse) CREATE_WAREHOUSE="$2"; shift ;;
-        --warehouse-type) WAREHOUSE_TYPE="$2"; shift ;;
-        --warehouse-size) WAREHOUSE_SIZE="$2"; shift ;;
+        --warehouse-type)
+            WAREHOUSE_TYPE="$2"
+            if [[ ! "${VALID_WAREHOUSE_TYPES[*]}" =~ $WAREHOUSE_TYPE ]]; then
+                log_message "ERROR" "Invalid warehouse type: $WAREHOUSE_TYPE. Must be one of: ${VALID_WAREHOUSE_TYPES[*]}"
+                exit 1
+            fi
+            shift ;;
+        --warehouse-size)
+            WAREHOUSE_SIZE="$2"
+            if [[ ! "${VALID_WAREHOUSE_SIZES[*]}" =~ $WAREHOUSE_SIZE ]]; then
+                log_message "ERROR" "Invalid warehouse size: $WAREHOUSE_SIZE. Must be one of: ${VALID_WAREHOUSE_SIZES[*]}"
+                exit 1
+            fi
+            shift ;;
         --warehouse-comment) WAREHOUSE_COMMENT="$2"; shift ;;
         --warehouse) WAREHOUSE="$2"; shift ;;
-        --create-database) DATABASE_NAME="$2"; shift ;;
-        --database-or-replace) DATABASE_OR_REPLACE="OR REPLACE "; shift ;;
-        --database-transient) DATABASE_TRANSIENT="TRANSIENT "; shift ;;
+        --connection) SNOWSQL_CONNECTION="$2"; shift ;;
+        --config) SNOWSQL_CONFIG="$2"; shift ;;
+        --create-database) CREATE_DATABASE="$2"; shift ;;
+        --database-or-replace) DATABASE_OR_REPLACE="OR REPLACE "; ;;
+        --database-transient) DATABASE_TRANSIENT="TRANSIENT "; ;;
         --database-comment) DATABASE_COMMENT="$2"; shift ;;
         --database-tags) DATABASE_TAGS="$2"; shift ;;
-        --create-schema) SCHEMA_NAME="$2"; shift ;;
+        --create-schema) CREATE_SCHEMA="$2"; shift ;;
         --database-name) DATABASE_NAME="$2"; shift ;;
-        --schema-or-replace) SCHEMA_OR_REPLACE="OR REPLACE "; shift ;;
-        --schema-transient) SCHEMA_TRANSIENT="TRANSIENT "; shift ;;
+        --schema-or-replace) SCHEMA_OR_REPLACE="OR REPLACE "; ;;
+        --schema-transient) SCHEMA_TRANSIENT="TRANSIENT "; ;;
         --schema-comment) SCHEMA_COMMENT="$2"; shift ;;
         --schema-tags) SCHEMA_TAGS="$2"; shift ;;
-        --create-file-format) FILE_FORMAT_NAME="$2"; shift ;;
-        --file-format-type) FILE_FORMAT_TYPE="$2"; shift ;;
+        --create-file-format) CREATE_FILE_FORMAT="$2"; shift ;;
+        --file-format-type)
+            FILE_FORMAT_TYPE="$2"
+            if [[ ! "${VALID_FILE_FORMAT_TYPES[*]}" =~ $FILE_FORMAT_TYPE ]]; then
+                log_message "ERROR" "Invalid file format type: $FILE_FORMAT_TYPE. Must be one of: ${VALID_FILE_FORMAT_TYPES[*]}"
+                exit 1
+            fi
+            shift ;;
         --file-format-field-delimiter) FILE_FORMAT_FIELD_DELIMITER="$2"; shift ;;
-        --file-format-field-optionally-enclosed-by) FILE_FORMAT_FIELD_OPTIONALLY_ENclosed_BY="$2"; shift ;;
-        --file-format-skip-header) FILE_FORMAT_SKIP_HEADER="$2"; shift ;;
+        --file-format-field-optionally-enclosed-by) FILE_FORMAT_FIELD_OPTIONALLY_ENCLOSED_BY="$2"; shift ;;
+        --file-format-skip-header)
+            FILE_FORMAT_SKIP_HEADER="$2"
+            if ! [[ "$FILE_FORMAT_SKIP_HEADER" =~ ^[0-9]+$ ]]; then
+                log_message "ERROR" "Invalid skip-header value: $FILE_FORMAT_SKIP_HEADER. Must be a non-negative integer."
+                exit 1
+            fi
+            shift ;;
         --file-format-comment) FILE_FORMAT_COMMENT="$2"; shift ;;
-        --create-stage) STAGE_NAME="$2"; shift ;;
+        --create-stage) CREATE_STAGE="$2"; shift ;;
         --stage-file-format) STAGE_FILE_FORMAT="$2"; shift ;;
         --stage-comment) STAGE_COMMENT="$2"; shift ;;
         --create-table) CREATE_TABLE="true"; ;;
@@ -238,51 +291,24 @@ while [[ "$#" -gt 0 ]]; do
         --table-file-path) TABLE_FILE_PATH="$2"; shift ;;
         --table-file-format) TABLE_FILE_FORMAT="$2"; shift ;;
         --table-comment) TABLE_COMMENT="$2"; shift ;;
-        --version) echo "$SCRIPT_NAME $VERSION"; exit 0 ;;
-        -h|--help) show_help ;;
-        *) echo "Unknown parameter: $1"; exit 1 ;;
+        *) log_message "ERROR" "Unknown parameter: $1"; exit 1 ;;
     esac
     shift
 done
 
-log_message "INFO" "Script $SCRIPT_NAME started. Version: $VERSION"
+log_message "INFO" "Script started."
 log_message "INFO" "Execution started from Host: $(hostname)"
-log_message "INFO" "Using Snowflake connection: blockchair_bitcoin"
-
-# Use SNOWFLAKE_WAREHOUSE from .env if --warehouse is not provided
-if [ -z "$WAREHOUSE" ] && [ -n "$SNOWFLAKE_WAREHOUSE" ]; then
-    WAREHOUSE="$SNOWFLAKE_WAREHOUSE"
-    log_message "INFO" "Using warehouse from .env: $WAREHOUSE"
-fi
+log_message "INFO" "Using SnowSQL connection: $SNOWSQL_CONNECTION, config: $SNOWSQL_CONFIG"
 
 # Determine action based on arguments
 ACTION_COUNT=0
-if [ -n "$CREATE_WAREHOUSE" ]; then
-    ACTION="warehouse"
-    ((ACTION_COUNT++))
-fi
-if [ -n "$DATABASE_NAME" ]; then
-    ACTION="database"
-    ((ACTION_COUNT++))
-fi
-if [ -n "$SCHEMA_NAME" ] && [ -n "$DATABASE_NAME" ] && [ -z "$CREATE_TABLE" ] && [ -z "$FILE_FORMAT_NAME" ] && [ -z "$STAGE_NAME" ]; then
-    ACTION="schema"
-    ((ACTION_COUNT++))
-fi
-if [ -n "$FILE_FORMAT_NAME" ]; then
-    ACTION="file_format"
-    ((ACTION_COUNT++))
-fi
-if [ -n "$STAGE_NAME" ]; then
-    ACTION="stage"
-    ((ACTION_COUNT++))
-fi
-if [ -n "$CREATE_TABLE" ]; then
-    ACTION="table"
-    ((ACTION_COUNT++))
-fi
+[ -n "$CREATE_WAREHOUSE" ] && ((ACTION_COUNT++))
+[ -n "$CREATE_DATABASE" ] && ((ACTION_COUNT++))
+[ -n "$CREATE_SCHEMA" ] && ((ACTION_COUNT++))
+[ -n "$CREATE_FILE_FORMAT" ] && ((ACTION_COUNT++))
+[ -n "$CREATE_STAGE" ] && ((ACTION_COUNT++))
+[ -n "$CREATE_TABLE" ] && ((ACTION_COUNT++))
 
-# Validate that exactly one action is specified
 if [ $ACTION_COUNT -eq 0 ]; then
     log_message "ERROR" "No action specified. Provide one of: --create-warehouse, --create-database, --create-schema, --create-file-format, --create-stage, --create-table"
     show_help
@@ -292,21 +318,34 @@ elif [ $ACTION_COUNT -gt 1 ]; then
     exit 1
 fi
 
+# Set ACTION
+if [ -n "$CREATE_WAREHOUSE" ]; then
+    ACTION="warehouse"
+elif [ -n "$CREATE_DATABASE" ]; then
+    ACTION="database"
+elif [ -n "$CREATE_SCHEMA" ]; then
+    ACTION="schema"
+elif [ -n "$CREATE_FILE_FORMAT" ]; then
+    ACTION="file_format"
+elif [ -n "$CREATE_STAGE" ]; then
+    ACTION="stage"
+elif [ -n "$CREATE_TABLE" ]; then
+    ACTION="table"
+fi
+
 # Validate warehouse for actions other than create-warehouse
 if [ "$ACTION" != "warehouse" ] && [ -z "$WAREHOUSE" ]; then
-    log_message "ERROR" "warehouse is required for $ACTION action. Specify --warehouse or set SNOWFLAKE_WAREHOUSE in .env"
+    log_message "ERROR" "Warehouse is required for $ACTION action. Specify --warehouse"
     exit 1
 fi
 
 # Execute based on action
 case $ACTION in
     warehouse)
-        # Validate warehouse arguments
         if [ -z "$CREATE_WAREHOUSE" ]; then
             log_message "ERROR" "create-warehouse is required for warehouse creation"
             exit 1
         fi
-        # Create warehouse
         sql="CREATE OR REPLACE WAREHOUSE $CREATE_WAREHOUSE \
              WAREHOUSE_TYPE = '$WAREHOUSE_TYPE' \
              WAREHOUSE_SIZE = '$WAREHOUSE_SIZE' \
@@ -314,95 +353,76 @@ case $ACTION in
         execute_snowsql "$sql" "Warehouse $CREATE_WAREHOUSE created successfully."
         ;;
     database)
-        # Validate database arguments
-        if [ -z "$DATABASE_NAME" ]; then
+        if [ -z "$CREATE_DATABASE" ]; then
             log_message "ERROR" "create-database is required for database creation"
             exit 1
         fi
-        # Create database
         TAGS=""
         if [ -n "$DATABASE_TAGS" ]; then
-            TAGS="WITH TAG ($(echo $DATABASE_TAGS | sed 's/,/, /g'))"
+            TAGS="WITH TAG ($(echo "$DATABASE_TAGS" | sed 's/,/, /g'))"
         fi
-        sql="CREATE ${DATABASE_OR_REPLACE}${DATABASE_TRANSIENT}DATABASE $DATABASE_NAME \
+        sql="CREATE ${DATABASE_OR_REPLACE}${DATABASE_TRANSIENT}DATABASE $CREATE_DATABASE \
              COMMENT = '$DATABASE_COMMENT' \
              $TAGS"
-        execute_snowsql "$sql" "Database $DATABASE_NAME created successfully."
+        execute_snowsql "$sql" "Database $CREATE_DATABASE created successfully."
         ;;
     schema)
-        # Validate schema arguments
-        if [ -z "$SCHEMA_NAME" ]; then
-            log_message "ERROR" "create-schema is required for schema creation"
+        if [ -z "$CREATE_SCHEMA" ] || [ -z "$DATABASE_NAME" ]; then
+            log_message "ERROR" "create-schema and database-name are required for schema creation"
             exit 1
         fi
-        if [ -z "$DATABASE_NAME" ]; then
-            log_message "ERROR" "database-name is required for schema creation"
-            exit 1
-        fi
-        # Create schema
+        check_database_exists "$DATABASE_NAME"
         TAGS=""
         if [ -n "$SCHEMA_TAGS" ]; then
-            TAGS="WITH TAG ($(echo $SCHEMA_TAGS | sed 's/,/, /g'))"
+            TAGS="WITH TAG ($(echo "$SCHEMA_TAGS" | sed 's/,/, /g'))"
         fi
-        sql="CREATE ${SCHEMA_OR_REPLACE}${SCHEMA_TRANSIENT}SCHEMA $DATABASE_NAME.$SCHEMA_NAME \
+        sql="CREATE ${SCHEMA_OR_REPLACE}${SCHEMA_TRANSIENT}SCHEMA $DATABASE_NAME.$CREATE_SCHEMA \
              COMMENT = '$SCHEMA_COMMENT' \
              $TAGS"
-        execute_snowsql "$sql" "Schema $DATABASE_NAME.$SCHEMA_NAME created successfully."
+        execute_snowsql "$sql" "Schema $DATABASE_NAME.$CREATE_SCHEMA created successfully."
         ;;
     file_format)
-        # Validate file format arguments
-        if [ -z "$FILE_FORMAT_NAME" ]; then
-            log_message "ERROR" "create-file-format is required for file format creation"
+        if [ -z "$CREATE_FILE_FORMAT" ] || [ -z "$DATABASE_NAME" ] || [ -z "$SCHEMA_NAME" ]; then
+            log_message "ERROR" "create-file-format, database-name, and schema-name are required for file format creation"
             exit 1
         fi
-        if [ -z "$DATABASE_NAME" ] || [ -z "$SCHEMA_NAME" ]; then
-            log_message "ERROR" "database-name and schema-name are required for file format creation"
-            exit 1
+        check_database_exists "$DATABASE_NAME"
+        check_schema_exists "$DATABASE_NAME" "$SCHEMA_NAME"
+        FIELD_OPTIONALLY_ENCLOSED_BY="FIELD_OPTIONALLY_ENCLOSED_BY = 'NONE'"
+        if [ -n "$FILE_FORMAT_FIELD_OPTIONALLY_ENCLOSED_BY" ]; then
+            FIELD_OPTIONALLY_ENCLOSED_BY="FIELD_OPTIONALLY_ENCLOSED_BY = '$FILE_FORMAT_FIELD_OPTIONALLY_ENCLOSED_BY'"
         fi
-        # Create file format
-        FIELD_OPTIONALLY_ENclosed_BY="FIELD_OPTIONALLY_ENclosed_BY = 'NONE'"
-        if [ -n "$FILE_FORMAT_FIELD_OPTIONALLY_ENclosed_BY" ]; then
-            FIELD_OPTIONALLY_ENclosed_BY="FIELD_OPTIONALLY_ENclosed_BY = '$FILE_FORMAT_FIELD_OPTIONALLY_ENclosed_BY'"
-        fi
-        sql="CREATE OR REPLACE FILE FORMAT $DATABASE_NAME.$SCHEMA_NAME.$FILE_FORMAT_NAME \
+        sql="CREATE OR REPLACE FILE FORMAT $DATABASE_NAME.$SCHEMA_NAME.$CREATE_FILE_FORMAT \
              TYPE = '$FILE_FORMAT_TYPE' \
              FIELD_DELIMITER = '$FILE_FORMAT_FIELD_DELIMITER' \
-             $FIELD_OPTIONALLY_ENclosed_BY \
+             $FIELD_OPTIONALLY_ENCLOSED_BY \
              SKIP_HEADER = $FILE_FORMAT_SKIP_HEADER \
              COMMENT = '$FILE_FORMAT_COMMENT'"
-        execute_snowsql "$sql" "File format $DATABASE_NAME.$SCHEMA_NAME.$FILE_FORMAT_NAME created successfully."
+        execute_snowsql "$sql" "File format $DATABASE_NAME.$SCHEMA_NAME.$CREATE_FILE_FORMAT created successfully."
         ;;
     stage)
-        # Validate stage arguments
-        if [ -z "$STAGE_NAME" ]; then
-            log_message "ERROR" "create-stage is required for stage creation"
+        if [ -z "$CREATE_STAGE" ] || [ -z "$DATABASE_NAME" ] || [ -z "$SCHEMA_NAME" ]; then
+            log_message "ERROR" "create-stage, database-name, and schema-name are required for stage creation"
             exit 1
         fi
-        if [ -z "$DATABASE_NAME" ] || [ -z "$SCHEMA_NAME" ]; then
-            log_message "ERROR" "database-name and schema-name are required for stage creation"
-            exit 1
-        fi
-        # Create stage
-        sql="CREATE OR REPLACE STAGE $DATABASE_NAME.$SCHEMA_NAME.$STAGE_NAME \
+        check_database_exists "$DATABASE_NAME"
+        check_schema_exists "$DATABASE_NAME" "$SCHEMA_NAME"
+        sql="CREATE OR REPLACE STAGE $DATABASE_NAME.$SCHEMA_NAME.$CREATE_STAGE \
              FILE_FORMAT = $DATABASE_NAME.$SCHEMA_NAME.$STAGE_FILE_FORMAT \
              COMMENT = '$STAGE_COMMENT'"
-        execute_snowsql "$sql" "Stage $DATABASE_NAME.$SCHEMA_NAME.$STAGE_NAME created successfully."
+        execute_snowsql "$sql" "Stage $DATABASE_NAME.$SCHEMA_NAME.$CREATE_STAGE created successfully."
         ;;
     table)
-        # Validate table arguments
-        if [ -z "$DATABASE_NAME" ] || [ -z "$SCHEMA_NAME" ]; then
-            log_message "ERROR" "database-name and schema-name are required for table creation"
-            exit 1
-        fi
-        if [ -z "$TABLE_SQL_PATH" ]; then
-            log_message "ERROR" "table-sql-path is required for table creation"
+        if [ -z "$DATABASE_NAME" ] || [ -z "$SCHEMA_NAME" ] || [ -z "$TABLE_SQL_PATH" ]; then
+            log_message "ERROR" "database-name, schema-name, and table-sql-path are required for table creation"
             exit 1
         fi
         if [ ! -f "$TABLE_SQL_PATH" ]; then
             log_message "ERROR" "SQL file $TABLE_SQL_PATH not found"
             exit 1
         fi
-        # Extract table name from SQL file if not provided
+        check_database_exists "$DATABASE_NAME"
+        check_schema_exists "$DATABASE_NAME" "$SCHEMA_NAME"
         if [ -z "$TABLE_NAME" ]; then
             TABLE_NAME=$(extract_table_name "$TABLE_SQL_PATH")
             if [ -z "$TABLE_NAME" ]; then
@@ -411,23 +431,9 @@ case $ACTION in
             fi
             log_message "INFO" "Extracted table name '$TABLE_NAME' from SQL file $TABLE_SQL_PATH"
         fi
-        # Check if schema exists
-        sql="SHOW SCHEMAS IN DATABASE $DATABASE_NAME;"
-        temp_sql_file=$(mktemp /tmp/snowsql.XXXXXX.sql)
-        echo "USE WAREHOUSE $WAREHOUSE;" > "$temp_sql_file"
-        echo "$sql" >> "$temp_sql_file"
-        output=$(snowsql -c blockchair_bitcoin -o quiet=true -f "$temp_sql_file" 2>&1 | grep "$SCHEMA_NAME")
-        local status=$?
-        rm -f "$temp_sql_file"
-        if [ $status -ne 0 ]; then
-            log_message "ERROR" "Schema $DATABASE_NAME.$SCHEMA_NAME does not exist. Create it first using --create-schema."
-            exit 1
-        fi
-        # Read and modify the SQL file
         TABLE_FULL_NAME="$DATABASE_NAME.$SCHEMA_NAME.$TABLE_NAME"
         sql=$(cat "$TABLE_SQL_PATH")
-        sql=$(echo "$sql" | sed "s/CREATE TABLE $TABLE_NAME/CREATE OR REPLACE TABLE $TABLE_FULL_NAME/" \
-                            | sed "s/CREATE OR REPLACE TABLE $TABLE_NAME/CREATE OR REPLACE TABLE $TABLE_FULL_NAME/")
+        sql=$(echo "$sql" | sed -E "s/CREATE[[:space:]]+(OR REPLACE[[:space:]]+)?TABLE[[:space:]]+[a-zA-Z0-9_\.]+/CREATE OR REPLACE TABLE $TABLE_FULL_NAME/i")
         if [ -n "$TABLE_COMMENT" ]; then
             if echo "$sql" | grep -q "COMMENT ="; then
                 sql=$(echo "$sql" | sed "s/COMMENT = .*/COMMENT = '$TABLE_COMMENT'/")
@@ -435,29 +441,30 @@ case $ACTION in
                 sql="$sql COMMENT = '$TABLE_COMMENT'"
             fi
         fi
-        # Create table
         execute_snowsql "$sql" "Table $TABLE_FULL_NAME created successfully from SQL file $TABLE_SQL_PATH."
-        # Load data from stage if file_path is provided
         if [ -n "$TABLE_FILE_PATH" ]; then
-            # Upload file to stage
+            if [ ! -f "$TABLE_FILE_PATH" ]; then
+                log_message "ERROR" "Data file $TABLE_FILE_PATH not found"
+                exit 1
+            fi
             temp_sql_file=$(mktemp /tmp/snowsql.XXXXXX.sql)
-            echo "PUT file://$TABLE_FILE_PATH @$DATABASE_NAME.$SCHEMA_NAME.$TABLE_FILE_FORMAT" > "$temp_sql_file"
-            output=$(snowsql -c blockchair_bitcoin -o quiet=true -f "$temp_sql_file" 2>&1)
+            echo "USE WAREHOUSE $WAREHOUSE;" > "$temp_sql_file"
+            echo "PUT file://$TABLE_FILE_PATH @%$TABLE_FULL_NAME;" >> "$temp_sql_file"
+            output=$(snowsql -c "$SNOWSQL_CONNECTION" --config "$SNOWSQL_CONFIG" -o quiet=true -f "$temp_sql_file" 2>&1)
             local status=$?
             rm -f "$temp_sql_file"
             if [ $status -eq 0 ]; then
-                log_message "INFO" "File $TABLE_FILE_PATH uploaded to stage $DATABASE_NAME.$SCHEMA_NAME.$TABLE_FILE_FORMAT."
+                log_message "INFO" "File $TABLE_FILE_PATH uploaded to table stage @%$TABLE_FULL_NAME."
             else
-                log_message "ERROR" "Failed to upload file $TABLE_FILE_PATH to stage. Error: $output"
+                log_message "ERROR" "Failed to upload file $TABLE_FILE_PATH to table stage. Error: $output"
                 exit 1
             fi
-            # Copy data into table
             sql="COPY INTO $TABLE_FULL_NAME \
-                 FROM @$DATABASE_NAME.$SCHEMA_NAME.$TABLE_FILE_FORMAT \
-                 FILE_FORMAT = (FORMAT_NAME = $DATABASE_NAME.$SCHEMA_NAME.$TABLE_FILE_FORMAT)"
-            execute_snowsql "$sql" "Data loaded into table $TABLE_FULL_NAME from stage path $TABLE_FILE_PATH."
+                 FROM @%$TABLE_FULL_NAME \
+                 FILE_FORMAT = (FORMAT_NAME = $DATABASE_NAME.$SCHEMA_NAME.$TABLE_FILE_FORMAT);"
+            execute_snowsql "$sql" "Data loaded into table $TABLE_FULL_NAME from file $TABLE_FILE_PATH."
         fi
         ;;
 esac
 
-log_message "INFO" "Script $SCRIPT_NAME finished execution."
+log_message "INFO" "Script finished execution."

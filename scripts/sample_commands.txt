@@ -1,0 +1,14 @@
+bash scripts/create_snowflake_objects.sh --create-warehouse BLOCKCHAIR --warehouse-size SMALL
+
+bash scripts/create_snowflake_objects.sh --create-database BLOCKCHAIR --warehouse BLOCKCHAIR
+
+bash scripts/create_snowflake_objects.sh --create-schema BITCOIN_RAW --database-name BLOCKCHAIR --warehouse BLOCKCHAIR
+
+bash scripts/create_snowflake_objects.sh --create-table --table-name BLOCKS_RAW --database-name BLOCKCHAIR --schema-name BITCOIN_RAW --table-sql-path sql/ddl/create_blocks.sql --warehouse BLOCKCHAIR
+bash scripts/create_snowflake_objects.sh --create-table --table-name INPUTS_RAW --database-name BLOCKCHAIR --schema-name BITCOIN_RAW --table-sql-path sql/ddl/create_inputs.sql --warehouse BLOCKCHAIR
+bash scripts/create_snowflake_objects.sh --create-table --table-name OUTPUTS_RAW --database-name BLOCKCHAIR --schema-name BITCOIN_RAW --table-sql-path sql/ddl/create_outputs.sql --warehouse BLOCKCHAIR
+bash scripts/create_snowflake_objects.sh --create-table --table-name TRANSACTIONS_RAW --database-name BLOCKCHAIR --schema-name BITCOIN_RAW --table-sql-path sql/ddl/create_transactions.sql --warehouse BLOCKCHAIR
+
+bash scripts/create_snowflake_objects.sh --create-file-format tsv_file_format --file-format-type CSV --file-format-field-delimiter '\t' --database-name BLOCKCHAIR --schema-name BITCOIN_RAW --warehouse BLOCKCHAIR
+
+bash scripts/create_snowflake_objects.sh --create-stage tsv_file_stage --stage-file-format tsv_file_format --database-name BLOCKCHAIR --schema-name BITCOIN_RAW --warehouse BLOCKCHAIR
