@@ -23,6 +23,7 @@ from logging.handlers import RotatingFileHandler
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from jsonschema import validate, ValidationError
 import re
+import pytz
 
 # === VERSION ===
 SCRIPT_VERSION = "1.6.0"
@@ -41,7 +42,7 @@ class JSONFormatter(logging.Formatter):
     """Custom formatter for JSON-structured logs."""
     def format(self, record):
         log_entry = {
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%dT%H:%M:%SZ'),
             "script": SCRIPT_NAME,
             "version": SCRIPT_VERSION,
             "session_id": SESSION_ID,

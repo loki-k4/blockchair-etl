@@ -106,7 +106,7 @@ validate_python() {
         log_message "ERROR" "Python3 is not installed or not in PATH"
         exit $EXIT_EXECUTION_ERROR
     }
-    command -v pip >/dev/null 2>&1 || {
+    command -v pip3 >/dev/null 2>&1 || {
         log_message "ERROR" "pip is not installed or not in PATH"
         exit $EXIT_EXECUTION_ERROR
     }
@@ -185,7 +185,7 @@ generate_ddl() {
 # Function to load data into Snowflake
 load_data() {
     log_message "INFO" "Starting data load to Snowflake"
-    "${PROJECT_ROOT}/scripts/snowflake/load_snowflake_data.sh" || {
+    "${PROJECT_ROOT}/scripts/snowflake/load_data_to_snowflake.sh" || {
         log_message "ERROR" "Failed to load data into Snowflake"
         exit $EXIT_EXECUTION_ERROR
     }

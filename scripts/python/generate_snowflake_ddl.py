@@ -21,6 +21,7 @@ import uuid
 from logging.handlers import RotatingFileHandler
 import pandas as pd
 from jsonschema import validate, ValidationError
+import pytz
 try:
     from colorama import init, Fore
     COLORAMA_AVAILABLE = True
@@ -45,7 +46,7 @@ class JSONFormatter(logging.Formatter):
     """Custom formatter for JSON-structured logs."""
     def format(self, record):
         log_entry = {
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "timestamp": datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%dT%H:%M:%SZ'),
             "script": SCRIPT_NAME,
             "version": SCRIPT_VERSION,
             "session_id": SESSION_ID,
