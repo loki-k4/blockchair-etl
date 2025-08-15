@@ -207,4 +207,4 @@ cython_debug/
 .snowsql/
 
 # Data Files
-data
+data/bitcoin
