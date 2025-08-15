@@ -1,0 +1,13 @@
+{
+  "//": "Configuration for generating Snowflake DDL statements using dynamic schema inference.",
+  "default_string_length": 64,
+  "//default_string_length": "Default VARCHAR length for columns when dynamically inferring schemas (e.g., 64 for VARCHAR(64)). Used when max string length is null or cannot be determined.",
+  "varchar_tiers": [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144],
+  "//varchar_tiers": "List of VARCHAR length tiers for dynamic inference. Selects the smallest tier >= max string length observed in the data. Covers up to 256KB for large fields (e.g., JSON, scripts).",
+  "date_formats": ["%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y"],
+  "//date_formats": "List of date formats for detecting DATE columns during dynamic schema inference.",
+  "timestamp_formats": ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"],
+  "//timestamp_formats": "List of timestamp formats for detecting TIMESTAMP columns during dynamic schema inference.",
+  "usecols": [],
+  "//usecols": "List of column names to include when reading TSV files for schema inference. Empty list means all columns are included."
+}

@@ -12,3 +12,76 @@ bash scripts/create_snowflake_objects.sh --create-table --table-name TRANSACTION
 bash scripts/create_snowflake_objects.sh --create-file-format tsv_file_format --file-format-type CSV --file-format-field-delimiter '\t' --database-name BLOCKCHAIR --schema-name BITCOIN_RAW --warehouse BLOCKCHAIR
 
 bash scripts/create_snowflake_objects.sh --create-stage tsv_file_stage --stage-file-format tsv_file_format --database-name BLOCKCHAIR --schema-name BITCOIN_RAW --warehouse BLOCKCHAIR
+
+PUT file://crypto-data/bitcoin/blockchair*.tsv.gz @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage AUTO_COMPRESS=TRUE;
+
+COPY INTO BLOCKCHAIR.BITCOIN_RAW.BLOCKS_RAW 
+FROM @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage 
+FILE_FORMAT = (FORMAT_NAME = BLOCKCHAIR.BITCOIN_RAW.tsv_file_format) 
+PATTERN='.*blocks.*' 
+ON_ERROR = 'skip_file';
+
+COPY INTO BLOCKCHAIR.BITCOIN_RAW.INPUTS_RAW 
+FROM @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage 
+FILE_FORMAT = (FORMAT_NAME = BLOCKCHAIR.BITCOIN_RAW.tsv_file_format) 
+PATTERN='.*inputs.*' 
+ON_ERROR = 'skip_file';
+
+COPY INTO BLOCKCHAIR.BITCOIN_RAW.OUTPUTS_RAW 
+FROM @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage 
+FILE_FORMAT = (FORMAT_NAME = BLOCKCHAIR.BITCOIN_RAW.tsv_file_format) 
+PATTERN='.*outputs.*' 
+ON_ERROR = 'skip_file';
+
+COPY INTO BLOCKCHAIR.BITCOIN_RAW.TRANSACTIONS_RAW 
+FROM @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage 
+FILE_FORMAT = (FORMAT_NAME = BLOCKCHAIR.BITCOIN_RAW.tsv_file_format) 
+PATTERN='.*transactions.*' 
+ON_ERROR = 'skip_file';
+
+
+NEED A CODE FOR COPYING FILES FROM LOCAL TO STAGE AND LOADING THAT FILES FROM STAGE INTO THIER RESPECTIVE TABLES
+TODAY'S DATE IS D, LATEST AVAILBLE FILES IN LOCAL IS OF DATES D-1,D-2.D-3 FOR ALL (BLOCKS,INPUTS,OUTPUTS,TRANSCTIONS) ALL ARE LOCATED UNDER SAME DIRECTORY
+
+NOW MY SCRIPT FIRST LOADS ALL FILES IN THAT DIRECTORY WITH A SINGLE COMMAND
+
+snowsql -c {connection_name} --config {path_to_config_file} -q "PUT file://{files_path} @{database}.{schema}.{stage} AUTO_COMPRESS=TRUE;"
+
+expamples in this case
+
+snowsql -c {connection_name} --config {path_to_config_file} -q "PUT file://crypto-data/bitcoin/blockchair*.tsv.gz @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage AUTO_COMPRESS=TRUE;"
+
+after loading all files to staged it should coupy them into their respective TABLES
+
+using COMMAND
+
+COPY INTO {database}.{schema}.{table_name}
+FROM @{database}.{schema}.{stage}
+FILE_FORMAT = (FORMAT_NAME = {database}.{schema}.{file_format})
+PATTERN='{pattern}'
+ON_ERROR = 'skip_file';
+
+expamples in this case
+COPY INTO BLOCKCHAIR.BITCOIN_RAW.BLOCKS_RAW 
+FROM @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage 
+FILE_FORMAT = (FORMAT_NAME = BLOCKCHAIR.BITCOIN_RAW.tsv_file_format) 
+PATTERN='.*blocks.*' 
+ON_ERROR = 'skip_file';
+
+COPY INTO BLOCKCHAIR.BITCOIN_RAW.INPUTS_RAW 
+FROM @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage 
+FILE_FORMAT = (FORMAT_NAME = BLOCKCHAIR.BITCOIN_RAW.tsv_file_format) 
+PATTERN='.*inputs.*' 
+ON_ERROR = 'skip_file';
+
+COPY INTO BLOCKCHAIR.BITCOIN_RAW.OUTPUTS_RAW 
+FROM @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage 
+FILE_FORMAT = (FORMAT_NAME = BLOCKCHAIR.BITCOIN_RAW.tsv_file_format) 
+PATTERN='.*outputs.*' 
+ON_ERROR = 'skip_file';
+
+COPY INTO BLOCKCHAIR.BITCOIN_RAW.TRANSACTIONS_RAW 
+FROM @BLOCKCHAIR.BITCOIN_RAW.tsv_file_stage 
+FILE_FORMAT = (FORMAT_NAME = BLOCKCHAIR.BITCOIN_RAW.tsv_file_format) 
+PATTERN='.*transactions.*' 
+ON_ERROR = 'skip_file';

@@ -1,0 +1,9 @@
+{
+  "//": "Configuration for downloading Blockchair data",
+  "base_url": "https://gz.blockchair.com",
+  "api_key": "${BLOCKCHAIR_API_KEY:-}",
+  "data_types": ["blocks", "transactions", "inputs", "outputs"],
+  "file_format": "tsv.gz",
+  "destination_dir": "${DATA_DIR}",
+  "retention_days": "${RETENTION_DAYS:-3}"
+}

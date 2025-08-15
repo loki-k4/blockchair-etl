@@ -1,0 +1,23 @@
+version: 2
+
+sources:
+  - name: bitcoin_raw
+    database: BLOCKCHAIR
+    schema: BITCOIN_RAW
+    tables:
+      - name: BLOCKS_RAW
+      - name: INPUTS_RAW
+      - name: OUTPUTS_RAW
+      - name: TRANSACTIONS_RAW
+
+models:
+  - name: stg_blocks
+    description: Staging view for BLOCKS_RAW
+    columns:
+      - name: ID
+        tests:
+          - not_null
+          - unique
+      - name: TIME
+        tests:
+          - not_null
