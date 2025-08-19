@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Script Name: pipeline.sh
+# Script Name: blockchair_etl_pipeline.sh
 # Description: Orchestrates ETL pipeline tasks for the blockchair-etl project, including setting up environments,
 #              downloading data, generating Snowflake DDLs, loading data, and cleaning old files.
 # Version: 1.1.1
 # Author: [Your Company/Author Name]
-# Date: August 14, 2025
-# Usage: ./pipeline.sh <command> [options]
+# Date: August 18, 2025
+# Usage: ./scripts/bash/blockchair_etl_pipeline.sh <command> [options]
 # Dependencies: Bash 4.0+, Python 3, SnowSQL CLI, uuidgen (optional)
 # Environment: Requires config/.env file with optional variables (e.g., DATA_DIR, LOG_DIR, RETENTION_DAYS)
 
@@ -41,7 +41,7 @@ log_message() {
     local level="$1"
     local message="$2"
     local timestamp
-    timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
+    timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     local hostname
     hostname=$(hostname)
     # Structured JSON log for enterprise log management systems
@@ -112,6 +112,24 @@ validate_python() {
     }
 }
 
+# Function to validate script execution directory
+validate_execution_dir() {
+    local expected_dirs=("${PROJECT_ROOT}/scripts/bash" "${PROJECT_ROOT}/scripts/snowflake")
+    local script_dir
+    script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+    local valid_dir=false
+    for dir in "${expected_dirs[@]}"; do
+        if [ "$script_dir" = "$dir" ]; then
+            valid_dir=true
+            break
+        fi
+    done
+    if [ "$valid_dir" = false ]; then
+        log_message "ERROR" "This script must be run from ${PROJECT_ROOT}/scripts/bash or ${PROJECT_ROOT}/scripts/snowflake, or as ./scripts/bash/blockchair_etl_pipeline.sh or ./scripts/snowflake/blockchair_etl_pipeline.sh"
+        exit $EXIT_INVALID_ARGS
+    fi
+}
+
 # Function to set up virtual environment
 setup_env() {
     log_message "INFO" "Setting up Python virtual environment"
@@ -157,6 +175,7 @@ generate_ddl() {
     local ddl_dir="${PROJECT_ROOT}/sql/ddl"
     mkdir -p "${ddl_dir}"
 
+    local all_success=true
     for data_type in blocks transactions inputs outputs; do
         local latest_file
         latest_file=$(ls -t "${data_dir}/${data_type}/blockchair_bitcoin_${data_type}"_*.tsv.gz 2>/dev/null | head -n 1)
@@ -166,19 +185,29 @@ generate_ddl() {
         fi
         local table_name="${data_type}_raw"
         local output_ddl="${ddl_dir}/create_${table_name}.sql"
-        python3 "${PROJECT_ROOT}/scripts/python/generate_snowflake_ddl.py" \
+        if ! python3 "${PROJECT_ROOT}/scripts/python/generate_snowflake_ddl.py" \
             "${latest_file}" \
             "${table_name}" \
             --sample-rows 1000000 \
             --chunk-size 10000 \
             --log-dir "${LOG_DIR}" \
             --output-ddl "${output_ddl}" \
-            --skip-existing || {
-            log_message "ERROR" "Failed to generate DDL for ${data_type}"
-            exit $EXIT_EXECUTION_ERROR
-        }
-        log_message "INFO" "Generated DDL for ${table_name} at ${output_ddl}"
+            --skip-existing; then
+            # Check if the failure was due to a schema skip
+            if grep -q "Schema skip" "${LOG_FILE}"; then
+                log_message "WARNING" "DDL generation skipped for ${data_type} due to existing schema"
+            else
+                log_message "ERROR" "Failed to generate DDL for ${data_type}"
+                all_success=false
+            fi
+        else
+            log_message "INFO" "Generated DDL for ${table_name} at ${output_ddl}"
+        fi
     done
+    if [ "$all_success" = false ]; then
+        log_message "ERROR" "DDL generation failed for one or more data types"
+        exit $EXIT_EXECUTION_ERROR
+    fi
     log_message "INFO" "DDL generation complete"
 }
 
@@ -212,8 +241,9 @@ main() {
     setup_logging
     log_message "INFO" "Script started. Session ID: $SESSION_ID, User: $USER"
 
-    # Validate environment
+    # Validate environment and execution directory
     validate_env
+    validate_execution_dir
 
     # Check for command
     if [ $# -eq 0 ]; then

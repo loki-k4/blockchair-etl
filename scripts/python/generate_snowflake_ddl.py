@@ -39,7 +39,11 @@ EXIT_SUCCESS = 0
 EXIT_INVALID_ARGS = 1
 EXIT_CONFIG_ERROR = 2
 EXIT_EXECUTION_ERROR = 5
-EXIT_SKIPPED = 1  # For skipping due to existing schema
+
+# === CUSTOM EXCEPTIONS ===
+class SchemaSkipError(Exception):
+    """Raised when DDL generation is skipped due to an existing schema."""
+    pass
 
 # === LOGGER SETUP ===
 class JSONFormatter(logging.Formatter):
@@ -429,7 +433,10 @@ def generate_ddl(table_name: str, schema: List[Tuple[str, str]], logger: logging
 
 # === MAIN ===
 def main():
-    """Generate Snowflake DDL from TSV or TSV.GZ files."""
+    """Generate Snowflake DDL from TSV or TSV.GZ files.
+
+    Note: This script is intended to be run via blockchair_etl_pipeline.sh to handle SchemaSkipError gracefully.
+    """
     if COLORAMA_AVAILABLE:
         init()
 
@@ -496,9 +503,9 @@ Examples:
         if args.skip_existing and (ddl_path or json_path):
             old_schema = parse_existing_schema(ddl_path, json_path, logger)
             if old_schema and not compare_schemas(schema, old_schema, logger):
-                logger.info("Skipped DDL generation due to larger or equal existing schema")
+                logger.warning("Skipped DDL generation due to larger or equal existing schema")
                 print(f"{Fore.YELLOW if COLORAMA_AVAILABLE else ''}[WARNING] Keeping existing schema with larger or equal types{Fore.RESET if COLORAMA_AVAILABLE else ''}")
-                sys.exit(EXIT_SKIPPED)
+                raise SchemaSkipError(f"DDL generation skipped for {args.table_name}: Existing schema is sufficient")
 
         ddl = generate_ddl(args.table_name, schema, logger)
 
@@ -523,6 +530,10 @@ Examples:
         logger.info("DDL generation completed successfully")
         print(f"{Fore.GREEN if COLORAMA_AVAILABLE else ''}✅ DDL generation completed{Fore.RESET if COLORAMA_AVAILABLE else ''}")
         sys.exit(EXIT_SUCCESS)
+    except SchemaSkipError as e:
+        logger.warning(f"Schema skip: {e}")
+        print(f"{Fore.YELLOW if COLORAMA_AVAILABLE else ''}[WARNING] Run this script via blockchair_etl_pipeline.sh to handle schema skips gracefully{Fore.RESET if COLORAMA_AVAILABLE else ''}")
+        raise
     except Exception as e:
         logger.exception(f"DDL generation failed: {e}")
         print(f"{Fore.RED if COLORAMA_AVAILABLE else ''}[ERROR] DDL generation failed: {e}{Fore.RESET if COLORAMA_AVAILABLE else ''}")
