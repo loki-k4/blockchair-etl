@@ -20,6 +20,9 @@ EXIT_CONFIG_ERROR=2
 EXIT_EXECUTION_ERROR=5
 
 # Default configuration
+# Set timezone to New York
+export TZ="America/New_York"
+# Default configuration
 VERSION="1.1.1"
 SCRIPT_NAME=$(basename "$0")
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -41,7 +44,7 @@ log_message() {
     local level="$1"
     local message="$2"
     local timestamp
-    timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    timestamp=$(date '+%Y-%m-%dT%H:%M:%S%z')
     local hostname
     hostname=$(hostname)
     # Structured JSON log for enterprise log management systems

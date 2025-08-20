@@ -209,3 +209,6 @@ cython_debug/
 # Data Files
 data/bitcoin
 data
+
+# Users
+config/.users.yml
