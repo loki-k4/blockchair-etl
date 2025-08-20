@@ -2,22 +2,68 @@ version: 2
 
 sources:
   - name: bitcoin_raw
-    database: BLOCKCHAIR
     schema: BITCOIN_RAW
     tables:
-      - name: BLOCKS_RAW
-      - name: INPUTS_RAW
-      - name: OUTPUTS_RAW
-      - name: TRANSACTIONS_RAW
+      - name: address_raw
+        description: Raw addresses with balances (satoshis).
+      - name: blocks_raw
+        description: Raw block data (satoshis, satoshis/KB for fees).
+      - name: inputs_raw
+        description: Raw transaction inputs (satoshis).
+      - name: outputs_raw
+        description: Raw transaction outputs (satoshis).
+      - name: transactions_raw
+        description: Raw transactions (satoshis, satoshis/KB for fees).
 
 models:
   - name: stg_blocks
-    description: Staging view for BLOCKS_RAW
+    description: Staged blocks (satoshis, satoshis/KB).
     columns:
-      - name: ID
+      - name: id
+        description: Unique block ID.
         tests:
-          - not_null
           - unique
-      - name: TIME
+          - not_null
+      - name: input_total_satoshis
+        description: Total input value (satoshis).
+      - name: fee_total_satoshis
+        description: Total fees (satoshis).
+
+  - name: stg_transactions
+    description: Staged transactions (satoshis, satoshis/KB).
+    columns:
+      - name: hash
+        description: Unique transaction hash.
+        tests:
+          - unique
+          - not_null
+      - name: input_total_satoshis
+        description: Total input value (satoshis).
+
+  - name: stg_inputs
+    description: Staged inputs (satoshis).
+    columns:
+      - name: transaction_hash
         tests:
           - not_null
+      - name: value_satoshis
+        description: Input value (satoshis).
+
+  - name: stg_outputs
+    description: Staged outputs (satoshis).
+    columns:
+      - name: transaction_hash
+        tests:
+          - not_null
+      - name: value_satoshis
+        description: Output value (satoshis).
+
+  - name: stg_addresses
+    description: Staged addresses (satoshis).
+    columns:
+      - name: address
+        tests:
+          - unique
+          - not_null
+      - name: balance_satoshis
+        description: Address balance (satoshis).

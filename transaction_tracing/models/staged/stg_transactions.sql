@@ -7,41 +7,28 @@
 
 -- Values in satoshis, fees in satoshis/KB or KWU, USD as-is
 SELECT
-  id,
+  block_id,
   hash,
   time,
-  median_time,
   size,
-  stripped_size,
   weight,
   version,
-  version_hex,
-  version_bits,
-  merkle_root,
-  nonce,
-  bits,
-  difficulty,
-  chainwork,
-  coinbase_data_hex,
-  transaction_count,
-  witness_count,
+  lock_time,
+  is_coinbase,
+  has_witness,
   input_count,
   output_count,
   input_total AS input_total_satoshis,
   input_total_usd,
   output_total AS output_total_satoshis,
   output_total_usd,
-  fee_total AS fee_total_satoshis,
-  fee_total_usd,
+  fee AS fee_satoshis,
+  fee_usd,
   fee_per_kb AS fee_per_kb_satoshis,
   fee_per_kb_usd,
   fee_per_kwu AS fee_per_kwu_satoshis,
   fee_per_kwu_usd,
-  cdd_total,
-  generation AS generation_satoshis,
-  generation_usd,
-  reward AS reward_satoshis,
-  reward_usd,
-  guessed_miner
-FROM {{ source('bitcoin_raw', 'blocks_raw') }}
-WHERE time IS NOT NULL
+  cdd_total
+FROM {{ source('bitcoin_raw', 'transactions_raw') }}
+WHERE hash IS NOT NULL
+  AND block_id IS NOT NULL
