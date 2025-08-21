@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: bitcoin_raw
+    schema: BITCOIN_RAW
+    database: blockchair
+    tables:
+      - name: address_raw
+        description: "Raw address data with balances in satoshis."
+      - name: blocks_raw
+        description: "Raw block data with values in satoshis, USD, sizes in bytes, weights in WU, and CDD in coin-days."
+      - name: inputs_raw
+        description: "Raw input data with values in satoshis, USD, and lifespan in seconds."
+      - name: outputs_raw
+        description: "Raw output data with values in satoshis, USD."
+      - name: transactions_raw
+        description: "Raw transaction data with values in satoshis, USD, and CDD in coin-days."

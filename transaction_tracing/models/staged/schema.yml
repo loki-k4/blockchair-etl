@@ -1,0 +1,78 @@
+version: 2
+
+models:
+  - name: stg_addresses
+    description: "Standardized address data with balances in satoshis and BTC."
+    columns:
+      - name: address
+        description: "Unique address identifier."
+        tests:
+          - unique
+          - not_null
+      - name: balance_sats
+        description: "Current balance in satoshis (1 BTC = 10^8 satoshis)."
+      - name: balance_btc
+        description: "Current balance in BTC."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [address]
+  - name: stg_blocks
+    description: "Standardized block data with values in satoshis, BTC, USD, sizes in bytes, weights in WU, and CDD in coin-days."
+    columns:
+      - name: block_id
+        description: "Unique block identifier."
+        tests:
+          - unique
+          - not_null
+      - name: input_total_sats
+        description: "Total input value in satoshis."
+      - name: fee_total_btc
+        description: "Total fees in BTC."
+      - name: cdd_total_days
+        description: "Coin Days Destroyed (value in BTC * days held)."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [block_id, block_hash]
+  - name: stg_inputs
+    description: "Standardized input data with values in satoshis, BTC, USD, and lifespan in seconds/days."
+    columns:
+      - name: transaction_hash
+        description: "Transaction hash."
+        tests:
+          - not_null
+      - name: value_sats
+        description: "Input value in satoshis."
+      - name: value_btc
+        description: "Input value in BTC."
+      - name: lifespan_days
+        description: "Lifespan in days."
+      - name: cdd_days
+        description: "Coin Days Destroyed (value in BTC * days held)."
+  - name: stg_outputs
+    description: "Standardized output data with values in satoshis, BTC, USD."
+    columns:
+      - name: transaction_hash
+        description: "Transaction hash."
+        tests:
+          - not_null
+      - name: value_sats
+        description: "Output value in satoshis."
+      - name: value_btc
+        description: "Output value in BTC."
+  - name: stg_transactions
+    description: "Standardized transaction data with values in satoshis, BTC, USD, and CDD in coin-days."
+    columns:
+      - name: transaction_hash
+        description: "Unique transaction hash."
+        tests:
+          - unique
+          - not_null
+      - name: input_total_sats
+        description: "Total input value in satoshis."
+      - name: fee_btc
+        description: "Transaction fee in BTC."
+      - name: cdd_total_days
+        description: "Coin Days Destroyed (value in BTC * days held)."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [transaction_hash, block_id]

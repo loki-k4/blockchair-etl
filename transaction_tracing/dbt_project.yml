@@ -1,8 +1,8 @@
-name: 'bitcoin_transaction_tracing'
+name: 'transaction_tracing'
 version: '1.0.0'
 config-version: 2
 
-profile: 'default'  # Adjust to your Snowflake profile
+profile: 'default'  # Adjust to your Snowflake profile in config/profiles.yml
 
 model-paths: ["models"]
 analysis-paths: ["analyses"]
@@ -16,12 +16,15 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-
 models:
-  bitcoin_transaction_tracing:
-    +database: BLOCKCHAIR  # Replace with your Snowflake database name
+  transaction_tracing:
+    +materialized: view
     staged:
+      +schema: staging
       +materialized: view
-      +schema: staged
-
-require-dbt-version: ">=1.0.0"
+    intermediate:
+      +schema: intermediate
+      +materialized: table
+    marts:
+      +schema: analytics
+      +materialized: table
